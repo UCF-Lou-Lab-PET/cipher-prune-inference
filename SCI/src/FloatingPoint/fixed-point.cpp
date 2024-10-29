@@ -875,6 +875,15 @@ FixArray FixOp::max(const vector<FixArray>& x) {
   return x_tr[0];
 }
 
+uint64_t FixOp::max2(const FixArray& x) {
+  std::vector<FixArray> tmp_array;
+  tmp_array.push_back(x);
+  FixArray tmp_res = fix->max(tmp_array);
+  tmp_array.clear();
+  // cout << "max2: " << tmp_res.data[0] << endl;
+  return tmp_res.data[0];
+}
+
 // A0 \in (1/4, 1)
 inline uint64_t recp_lookup_c0(uint64_t index, int m) {
   uint64_t k = 1ULL << m;
@@ -1058,3 +1067,204 @@ FixArray FixOp::tanh(const FixArray& x, int l_y, int s_y) {
 FixArray FixOp::sqrt(const FixArray& x, int l_y, int s_y, bool recp_sqrt) {
   assert(x.party != PUBLIC);
 }
+
+
+FixArray FixOp::softmax(const FixArray& x, int l_y, int s_y){
+  assert(x.party != PUBLIC);
+  assert(x.signed_ == true);
+  uint64_t mask_l = (x.ell == 64 ? -1 : (1ULL << x.ell) - 1);
+  uint64_t mask_exp_out = ((s_y+3) == 64 ? -1 : ((1ULL << (s_y+3)) - 1));
+  uint64_t x_max = fix->max2(x) & mask_l;
+  BoolArray all_0 = bool_op->input(x.party, x.size, uint8_t(0));
+  FixArray x_max_fix = this->input(x.party, x.size, x_max, x.signed_, x.ell, x.s);
+  FixArray x_bar = fix->sub(x, x_max_fix);
+  FixArray exp_neg_x = fix->exp(x_bar, s_y+2, s_y);
+  // uint64_t exp_sum_share=0;
+  for(int i =0; i<x.size; i++){
+    exp_neg_x.data[i] &= mask_exp_out;
+    // exp_sum_share += exp_neg_x.data[i];
+  }
+  exp_neg_x = fix->extend(exp_neg_x, x.ell, all_0.data);
+  FixArray exp_sum = fix->input(x.party, x.size, uint64_t(0), false,  x.ell, x.s);
+  for(int i=0; i<x.size; i++){
+    FixArray exp_neg_x_i = fix->input(x.party, x.size, exp_neg_x.data[i], false, x.ell, x.s);
+    exp_sum = fix->add(exp_sum, exp_neg_x_i);
+  }
+  FixArray dn=exp_sum;
+  FixArray one_dn = fix->input(ALICE, x.size, 1, true, 2, 0);
+  FixArray exp_recp = fix->div(one_dn, dn, x.ell, s_y, false);
+  FixArray softmax_res = fix->mul(exp_neg_x, exp_recp, x.ell, all_0.data, all_0.data);
+  softmax_res = fix->truncate_reduce(softmax_res, s_y);
+  softmax_res.ell = x.ell;
+  FixArray ret=softmax_res;
+  if (l_y >= s_y + 2) {
+    //zero_extend
+    ret = fix->extend(ret, l_y, all_0.data);
+  } else {
+    // ret = fix->extend(ret, l_y, all_0.data);
+    ret = fix->reduce(ret, l_y);
+  }
+  // std::cout << RESET;
+  return ret;
+}
+
+
+FixArray FixOp::GeLU(const FixArray& x, int l_y, int s_y){
+  assert(x.party != PUBLIC);
+  assert(x.signed_ == true);
+  // std::cout<< BLUE << "[Test] in GeLU " <<  std::endl;
+  BoolArray all_0 = bool_op->input(ALICE, s_y+2, uint8_t(0));
+  //step 1, compute tanh base
+  //coef1 = sqrt(2/pi); coef2 = (0.044715); coef3 = 0.5 (note that a scale of 12 is used)
+  FixArray coef1 = fix->input(ALICE, x.size, uint64_t(0xcc4), true, x.ell, x.s);
+  FixArray coef2 = fix->input(ALICE, x.size, uint64_t(0xb7), true, x.ell, x.s);
+  FixArray coef3 = fix->input(ALICE, x.size, uint64_t(0x800), true, x.ell, x.s);
+  FixArray cst_1 = fix->input(ALICE, x.size, 1ULL << x.s, true, x.ell, x.s);
+
+  FixArray tan_base = fix->mul(x, coef2, 2*x.ell-1, all_0.data, all_0.data);
+  tan_base = fix->truncate_reduce(tan_base, s_y);
+  tan_base = fix->mul(tan_base, x, 2*x.ell-1, all_0.data, all_0.data);
+  tan_base = fix->truncate_reduce(tan_base, s_y);
+  tan_base = fix->mul(tan_base, x, 2*x.ell-1, all_0.data, all_0.data);
+  tan_base = fix->truncate_reduce(tan_base, s_y);
+  //make sure the value won't overflow st. the following operation is safe
+  tan_base.ell = x.ell;
+  tan_base = fix->add(tan_base, x);
+  tan_base = fix->mul(tan_base, coef1, 2*x.ell-1, all_0.data, all_0.data);
+  tan_base = fix->truncate_reduce(tan_base, s_y);
+  tan_base.ell = x.ell;
+
+  //step 2, compute tanh
+  FixArray gelu_x = fix->tanh(tan_base, l_y, s_y);
+  
+  //step 3, compute 0.5x * (1 + tanh)
+  gelu_x = fix->add(gelu_x, cst_1);
+  gelu_x = fix->mul(gelu_x, x, 2*x.ell-1, all_0.data, all_0.data);
+  gelu_x = fix->truncate_reduce(gelu_x, s_y);
+  gelu_x = fix->mul(gelu_x, coef3, 2*x.ell-1, all_0.data, all_0.data);
+  gelu_x = fix->truncate_reduce(gelu_x, s_y);
+  gelu_x.ell = x.ell;
+
+  FixArray ret=gelu_x;
+  // cout << RESET;
+  return ret;
+}
+
+
+FixArray FixOp::layer_norm(const FixArray& x, int l_y, int s_y){
+  assert(x.party != PUBLIC);
+  assert(x.signed_ == true);
+  FixArray ret=x;
+  return ret;
+}
+
+FixArray FixOp::gen_mask(const FixArray& x, int l_y, int s_y){
+  std::cout<< YELLOW << "[Test] in gen_mask " <<  std::endl;
+  assert(x.party != PUBLIC);
+  FixArray threshold = fix->input(ALICE, x.size, uint64_t(0x5000), false, x.ell, x.s);
+  BoolArray mask = fix->GT(x, threshold);
+  FixArray res = fix->B2A(mask, false, x.ell);
+  FixArray ret=res;
+  std::cout << RESET;
+  return ret;
+}
+
+// msb version naive, swap on 0
+FixArray FixOp::prune(const FixArray& x, const FixArray& score, int l_y, int s_y, int pr){
+  std::cout<< YELLOW << "[Test] in prune " <<  std::endl;
+  assert(x.party != PUBLIC);
+  int dimension = 768;
+  FixArray zero = fix->input(ALICE, dimension, uint64_t(0), x.signed_, x.ell, x.s);
+  FixArray zero_mask = fix->input(ALICE, score.size, uint64_t(0), false, x.ell, x.s);
+  FixArray threshold = fix->input(ALICE, x.size, uint64_t(0x5000), false, x.ell, x.s);
+  std::vector<FixArray> tokens(score.size);
+  for (int i=0; i<tokens.size(); i++){
+    tokens[i] = fix->input(x.party, dimension, x.data[i], x.signed_, x.ell, x.s);
+  }
+
+  std::clock_t start = std::clock();
+  auto start2 = clock_start();
+
+  BoolArray mask = fix->GT(score, threshold);
+  FixArray flag = fix->if_else(mask, uint64_t(1ULL<<16), zero_mask);
+  for(int i=0; i < score.size; i++){
+    tokens[i].data[0] = tokens[i].data[0] + flag.data[i];
+  }
+  FixArray msb_tokens = fix->input(x.party, 1, uint64_t(0), x.signed_, x.ell, x.s);
+  // should call fix->msb, but the function is the same, eventually calling aux.msb
+  BoolArray msb = fix->GT(msb_tokens, uint64_t(1ULL<<16));
+
+  for(int k=0; k < int(pr); k++){
+      for(int i = 0; i < score.size - 1-k; i++){
+        msb_tokens.data[0] = tokens[i].data[0];
+        msb = fix->GT(msb_tokens, uint64_t(1ULL<<16));
+        // swaps, if 0, x (0,0 or 0,1)
+        BoolArray temp_mask = bool_op->input(x.party, dimension, msb.data[0]);
+        FixArray temp_first = fix->if_else(temp_mask, tokens[i], tokens[i+1]);
+        FixArray temp_next = fix->if_else(temp_mask, tokens[i+1], tokens[i]);
+        tokens[i] = temp_first;
+        tokens[i+1] = temp_next;
+    }
+  }
+
+  std::clock_t end = std::clock();
+  double duration = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+  // Output the duration
+  std::cout << "[In prune] Time taken: " << duration << " seconds" << std::endl;
+
+  long long t = time_from(start2);
+  cout << "[In Prune] prune Time\t" << t / (1000.0) << " ms" << endl;
+
+  FixArray res = x;
+  for(int i = 0; i < score.size; i++){
+    res.data[i] = tokens[i].data[0];
+  }
+  FixArray ret=res;
+  std::cout << RESET;
+  return ret;
+}
+
+
+// input an array, and swap TAG to the end.
+ FixArray FixOp::swap(const FixArray& x, int l_y, int s_y){
+  assert(x.party != PUBLIC);
+  std::cout<< BLUE << "[Test] in swap " <<  std::endl;
+  BoolArray all_0 = bool_op->input(ALICE, s_y+2, uint8_t(0));
+  // FixArray zero = fix->input(ALICE, x.size, uint64_t(0), true, x.ell, x.s);
+  // FixArray threshold = fix->input(ALICE, x.size, uint64_t(0x4000), true, x.ell, x.s);
+  // BoolArray mask = fix->GT(x, threshold);
+  FixArray x_square = fix->mul(x, x, 2*x.ell-1, all_0.data, all_0.data);
+  x_square = fix->truncate_reduce(x, s_y);
+  FixArray ret=x_square;
+  std::cout << RESET;
+  return ret;
+}
+
+ FixArray FixOp::proxy(const FixArray& x, int l_y, int s_y){
+  assert(x.party != PUBLIC);
+  BoolArray all_0 = bool_op->input(ALICE, s_y+2, uint8_t(0));
+  std::cout<< BLUE << "[Test] in proxy " <<  std::endl;
+  FixArray x_square = fix->mul(x, x, 2*x.ell-1, all_0.data, all_0.data);
+  x_square = fix->truncate_reduce(x, s_y);
+  x_square = fix->mul(x, x, 2*x.ell-1, all_0.data, all_0.data);
+  x_square = fix->truncate_reduce(x, s_y);
+  x_square = fix->mul(x, x, 2*x.ell-1, all_0.data, all_0.data);
+  x_square = fix->truncate_reduce(x, s_y);
+  x_square = fix->mul(x, x, 2*x.ell-1, all_0.data, all_0.data);
+  x_square = fix->truncate_reduce(x, s_y);
+  BoolArray msb_x = fix->MSB(x);
+  msb_x = fix->MSB(x);
+  msb_x = fix->MSB(x);
+  FixArray mat = fix->if_else(msb_x, x, x);
+  mat = fix->if_else(msb_x, x, x);
+  mat = fix->if_else(msb_x, x, x);
+  
+
+  // approximate with mux
+
+  FixArray ret=mat;
+  std::cout << RESET;
+  return ret;
+}
+
+

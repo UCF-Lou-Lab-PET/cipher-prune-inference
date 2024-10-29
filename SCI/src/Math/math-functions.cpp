@@ -887,3 +887,89 @@ void MathFunctions::ReLU(int32_t dim, uint64_t *x, uint64_t *y, int32_t bw_x,
   delete[] tmp;
   delete[] tmp_msb;
 }
+
+
+
+/*
+when taking mul, sqrt, mind the bitwidth that is real meaningful
+don't input all the bitwidth
+*/
+void MathFunctions::layer_norm(int32_t dim, uint64_t *x, uint64_t *y, int32_t bw_x,
+                          int32_t bw_y, int32_t s_x, int32_t s_y) {
+  // cout<< BLUE << "[Info]======== enter layernorm ========" << endl;
+  uint64_t mask_x = (bw_x == 64 ? -1 : ((1ULL << bw_x) - 1));
+  uint64_t mask_y = (bw_y == 64 ? -1 : ((1ULL << bw_y) - 1));
+  uint64_t mask_exp_out = ((s_y + 2) == 64 ? -1 : ((1ULL << (s_y + 2)) - 1));
+  uint64_t mask_den = ((s_y + 2) == 64 ? -1 : ((1ULL << (s_y + 2)) - 1));
+  uint8_t *zero_shares = new uint8_t[dim];
+  for (int i = 0; i < dim; i++) {
+    zero_shares[i] = 0;
+  }
+  uint8_t *msb_x = new uint8_t[dim];
+  aux->MSB(x, msb_x, dim, bw_x);
+  
+  uint64_t *tmp_1 = new uint64_t[dim];
+  uint64_t *tmp_2 = new uint64_t[dim];
+  uint64_t sum = 0, mean=0;
+
+  //step 1. compute the mean, (x-mean)^2
+  uint64_t *nm = new uint64_t[dim];
+  for(int i=0; i<dim; i++){
+    tmp_1[i] = x[i] & mask_x;
+    sum += x[i] & mask_x;
+  }
+  mean = sum / dim;
+  for(int i=0; i<dim; i++){
+    tmp_1[i] -= mean;
+    nm[i] = tmp_1[i];
+  }
+  // tmp1 for (x-miu)^2
+  mult->hadamard_product(dim, tmp_1, tmp_1, tmp_2, bw_x, bw_x, 2*bw_x, true, true,
+                        MultMode::None, msb_x, msb_x);
+  trunc->truncate_and_reduce(dim, tmp_2, tmp_1, s_y, bw_x);
+  // compute sum_(x-miu)^2 / n
+  uint64_t sum_t=0, mean_t=0;
+  for(int i=0; i<dim; i++){
+    sum_t += tmp_1[i];
+  }
+  mean_t = sum_t / dim; 
+
+  //step 2. var = sqrt, and div
+  // note the bw, set to s_y+8 for now
+  uint64_t *var_tmp_1 = new uint64_t[1];
+  uint64_t *var_tmp_2 = new uint64_t[1];
+  var_tmp_1[0] = mean_t;
+  sqrt(1, var_tmp_1, var_tmp_2, s_y+8, s_y+8, s_x, s_y, true);
+  uint64_t var_recp = var_tmp_2[0];
+  delete[] var_tmp_1;
+  delete[] var_tmp_2;
+
+  // //step 3. output
+  for(int i=0; i<dim; i++){
+    tmp_2[i] = var_recp & mask_x;
+  }
+  uint8_t *msb_a = new uint8_t[dim];
+  aux->MSB(nm, msb_a, dim, s_y+6);
+  // aux->MSB(tmp_2, msb_b, dim, s_y+4);
+  mult->hadamard_product(dim, nm, tmp_2, tmp_1, s_y+3, s_y+4, 2*s_y+6, true, true,
+                        MultMode::None, msb_a, zero_shares);
+  trunc->truncate_and_reduce(dim, tmp_1, tmp_2, s_y, bw_x);
+
+
+
+  if (bw_y <= (s_y + 2)) {
+    for (int i = 0; i < dim; i++) {
+      y[i] = x[i] & mask_y;
+    }
+  } else {
+    xt->z_extend(dim, tmp_2, y, s_y+6, bw_y, zero_shares);
+  }
+
+  // cout << RESET;
+  delete[] msb_x;
+  delete[] tmp_1;
+  delete[] tmp_2;
+  delete[] nm;
+  delete[] msb_a;
+  return;
+}

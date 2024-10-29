@@ -391,6 +391,7 @@ public:
 
   // Finds max element in x[i], forall i
   FixArray max(const std::vector<FixArray>& x);
+  uint64_t max2(const FixArray& x);
 
   // SIRNN's math functions
 
@@ -409,6 +410,25 @@ public:
   FixArray sigmoid(const FixArray& x, int l_y, int s_y);
 
   FixArray tanh(const FixArray& x, int l_y, int s_y);
+
+  // build softmax, gelu, and layernorm here. 
+
+  FixArray softmax(const FixArray& x, int l_y, int s_y);
+
+  FixArray GeLU(const FixArray& x, int l_y, int s_y);
+
+  FixArray layer_norm(const FixArray& x, int l_y, int s_y);
+
+  // functions for prune
+  FixArray gen_mask(const FixArray& score, int l_y, int s_y);
+
+  FixArray prune(const FixArray& x, const FixArray& score, int l_y, int s_y, int pr);
+  
+
+  FixArray swap(const FixArray& x, int l_y, int s_y);
+
+  // proxy is a temporary function for latency
+  FixArray proxy(const FixArray& x, int l_y, int s_y);
 
 };
 
