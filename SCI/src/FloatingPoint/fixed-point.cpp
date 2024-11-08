@@ -1169,7 +1169,7 @@ FixArray FixOp::gen_mask(const FixArray& x, int l_y, int s_y){
   return ret;
 }
 
-// msb version naive, swap on 0
+// secure pruning based on swap, msb version naive, swap on 0
 FixArray FixOp::prune(const FixArray& x, const FixArray& score, int l_y, int s_y, int pr){
   std::cout<< YELLOW << "[Test] in prune " <<  std::endl;
   assert(x.party != PUBLIC);
@@ -1223,6 +1223,61 @@ FixArray FixOp::prune(const FixArray& x, const FixArray& score, int l_y, int s_y
   std::cout << RESET;
   return ret;
 }
+
+// secure pruning based on sorting (bubble up)
+// FixArray FixOp::prune(const FixArray& x, const FixArray& score, int l_y, int s_y, int pr){
+//   std::cout<< YELLOW << "[Test] in prune " <<  std::endl;
+//   assert(x.party != PUBLIC);
+//   int dimension = 768;
+//   FixArray zero = fix->input(ALICE, dimension, uint64_t(0), x.signed_, x.ell, x.s);
+//   FixArray zero_mask = fix->input(ALICE, score.size, uint64_t(0), false, x.ell, x.s);
+//   FixArray threshold = fix->input(ALICE, x.size, uint64_t(0x5000), false, x.ell, x.s);
+//   std::vector<FixArray> tokens(score.size);
+//   for (int i=0; i<tokens.size(); i++){
+//     tokens[i] = fix->input(x.party, dimension, x.data[i], x.signed_, x.ell, x.s);
+//   }
+
+//   std::clock_t start = std::clock();
+//   auto start2 = clock_start();
+
+//   BoolArray mask = fix->GT(score, threshold);
+//   FixArray flag = fix->if_else(mask, uint64_t(1ULL<<16), zero_mask);
+//   for(int i=0; i < score.size; i++){
+//     tokens[i].data[0] = tokens[i].data[0] + flag.data[i];
+//   }
+//   FixArray msb_tokens = fix->input(x.party, 1, uint64_t(0), x.signed_, x.ell, x.s);
+//   // should call fix->msb, but the function is the same, eventually calling aux.msb
+//   BoolArray msb = fix->GT(msb_tokens, uint64_t(1ULL<<16));
+
+//   for(int k=0; k < score.size; k++){
+//       for(int i = 0; i < score.size - 1-k; i++){
+//         msb_tokens.data[0] = tokens[i].data[0];
+//         msb = fix->GT(msb_tokens, uint64_t(1ULL<<16));
+//         // swaps, if 0, x (0,0 or 0,1)
+//         BoolArray temp_mask = bool_op->input(x.party, dimension, msb.data[0]);
+//         FixArray temp_first = fix->if_else(temp_mask, tokens[i], tokens[i+1]);
+//         FixArray temp_next = fix->if_else(temp_mask, tokens[i+1], tokens[i]);
+//         tokens[i] = temp_first;
+//         tokens[i+1] = temp_next;
+//     }
+//   }
+
+//   std::clock_t end = std::clock();
+//   double duration = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+//   // Output the duration
+//   std::cout << "[In prune] Time taken: " << duration << " seconds" << std::endl;
+
+//   long long t = time_from(start2);
+//   cout << "[In Prune] prune Time\t" << t / (1000.0) << " ms" << endl;
+
+//   FixArray res = x;
+//   for(int i = 0; i < score.size; i++){
+//     res.data[i] = tokens[i].data[0];
+//   }
+//   FixArray ret=res;
+//   std::cout << RESET;
+//   return ret;
+// }
 
 
 // input an array, and swap TAG to the end.
