@@ -1,72 +1,50 @@
-# CrypTFlow: An End-to-end System for Secure TensorFlow Inference [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mpc-msri/EzPC/issues)
+# CipherPrune: Efficient and Scalable Private Transformer Inference
 
-**Reference Papers:**  
+This is the code for CipherPrune: Efficient and Scalable Private Transformer Inference. This code is built upon the [EzPC](https://github.com/mpc-msri/EzPC) library.
 
-[Secure Floating-Point Training](https://eprint.iacr.org/2023/467)  
-Deevashwer Rathee, Anwesh Bhattacharya, Divya Gupta, Rahul Sharma, Dawn Song  
-*USENIX Security 2023*
+## Installation
 
-[SecFloat: Accurate Floating-Point meets Secure 2-Party Computation](https://eprint.iacr.org/2022/322)  
-Deevashwer Rathee, Anwesh Bhattacharya, Rahul Sharma, Divya Gupta, Nishanth Chandran, Aseem Rastogi  
-*IEEE S&P 2022*
+Please follow the [EzPC](https://github.com/mpc-msri/EzPC) instructions to build and install the library.
 
-[SIRNN: A Math Library for Secure RNN Inference](https://eprint.iacr.org/2021/459)  
-Deevashwer Rathee, Mayank Rathee, Rahul Kranti Kiran Goli, Divya Gupta, Rahul Sharma, Nishanth Chandran, Aseem Rastogi  
-*IEEE S&P 2021*
+## Test pruning
 
-[CrypTFlow2: Practical 2-Party Secure Inference](https://eprint.iacr.org/2020/1002)  
-Deevashwer Rathee, Mayank Rathee, Nishant Kumar, Nishanth Chandran, Divya Gupta, Aseem Rastogi, Rahul Sharma  
-*ACM CCS 2020*
+To test the secure pruning protocol, run the following command under the ```SCI/build/bin``` directoty. One token is a vector of length 768 by default. For example, to prune 4 tokens out of 55 tokens, run (role==1 means server).
 
-[CrypTFlow: Secure TensorFlow Inference](https://eprint.iacr.org/2019/1049)  
-Nishant Kumar, Mayank Rathee, Nishanth Chandran, Divya Gupta, Aseem Rastogi, Rahul Sharma  
-*IEEE S&P 2020*
+    ./prune-OT r=1 N=50 pr=2
 
-[EzPC: Programmable, Efficient, and Scalable Secure Two-Party Computation for Machine Learning](https://eprint.iacr.org/2017/1109.pdf)  
-Nishanth Chandran, Divya Gupta, Aseem Rastogi, Rahul Sharma, Shardul Tripathi  
-*IEEE EuroS&P 2019*
+In another terminal run (role==1 means client):
 
-**Project webpage:** <https://aka.ms/ezpc>
+    ./prune-OT r=2 N=50 pr=2
 
-## Introduction
-This repository has the following components:  
+By successfully building the test files, on the server side you should see:
 
-- **EzPC**: a language for secure machine learning.
-- **Athos** (part of **CrypTFlow**): an end-to-end compiler from TensorFlow to a variety of semi-honest MPC protocols. Athos leverages EzPC as a low-level intermediate language.
-- **SIRNN**: an end-to-end framework for performing inference over quantized RNN models using semi-honest 2-party computation protocols.
-- **Beacon**: an end-to-end framework for training feed-forward and convolutional neural networks using specialized 2PC floating-point protocols 
-- **Porthos** (part of **CrypTFlow**): a semi-honest 3 party computation protocol which is geared towards TensorFlow-like applications.
-- **Aramis** (part of **CrypTFlow**): a novel technique that uses hardware with integrity guarantees to convert any semi-honest MPC protocol into an MPC protocol that provides malicious security.
-- **SCI** (part of **CrypTFlow2**, **SIRNN**, **SecFloat**, and **Beacon**): a semi-honest 2-party computation library for secure (fixed-point) inference on deep neural networks and secure floating-point computation.
+    connected
+    All Base OTs Done
+    [Multihead] 16 heads and N=50
+    [Test] in prune
+    [In prune] Time taken: 0.918475 seconds
+    [In Prune] prune Time	528.661 ms
+    Number of prune ops/s:	94.4415
+    prune Time	529.428 ms
+    prune Bytes Sent	3031806 bytes
+    [Info] Called SCI_OT for Prune
+    [Info] Vector Length is: 50
+    [Server] Successful Operation
 
-Each one of the above is independent and usable in their own right and more information can be found in the readme of each of the components. But together these combine to make **CrypTFlow** a powerful system for end-to-end secure inference of deep neural networks written in TensorFlow.
+and on the client side, you should see:
 
-With these components in place, we are able to run for the first time secure inference on the [ImageNet dataset]([http://www.image-net.org) with the pre-trained models of the following deep neural nets: ResNet-50, DenseNet-121 and SqueezeNet for ImageNet. For an end-to-end tutorial on running models with CrypTFlow please refer to this [blog post](https://pratik-bhatu.medium.com/privacy-preserving-machine-learning-for-healthcare-using-cryptflow-cc6c379fbab7).
-
-## Setup
-For setup instructions, please refer to each of the components' readme.
-
-Alternatively you can use the **setup_env_and_build.sh** script. It installs dependencies and builds each component. It also creates a virtual environment in a *mpc_venv* folder with all the required packages. If you want to do setup with default paths and settings do ``./setup_env_and_build.sh quick``, otherwise if you want to manually choose paths you can use ``./setup_env_and_build.sh``.
-
-Please do ``source mpc_venv/bin/activate`` before using the toolchain.
-
-## Secure AI Validation
-
-To setup the repo with modified SCI build such that only secret shares are revealed at the end of 2PC, run the setup script as ``./setup_env_and_build.sh quick NO_REVEAL_OUTPUT``.
-Alternatively, just rebuild SCI. For instructions to build modified SCI, see README for SCI.
-
-To build docker image for Secure AI Validation, use the `Dockerfile_AI_Validation` dockerfile.
-
-```docker build -t ezpc_modified - < path/to/EzPC/Dockerfile_AI_Validation```
-
-
-### Docker
-You can use a pre-built docker image from docker hub using ``docker pull ezpc/ezpc:latest``. We occasionally push stable images to that channel. However, if you want a docker image with the latest code, you can build it yourself using:
-
-```docker build -t ezpc_image - < path/to/EzPC/Dockerfile```
-
-## Wiki
-Wiki section of this repository provides coding practices and examples to get started with EzPC.
-
-## Issues/Bugs
-For bugs and support, please create an issue on the issues page.
+    connected
+    All Base OTs Done
+    [Multihead] 16 heads and N=50
+    [Test] in prune
+    [In prune] Time taken: 0.900247 seconds
+    [In Prune] prune Time	528.909 ms
+    [Prune] Success mask!
+    ================== res and shares ==================
+    prune 2 out of 50
+    Average ULP error: 0
+    Max ULP error: 0
+    Number of tests: 50
+    Number of prune ops/s:	94.4615
+    prune Time	529.316 ms
+    prune Bytes Sent	4624846 bytes
